@@ -1,0 +1,64 @@
+.program hello
+
+start:
+    set y, 1        ; Setting y scratch register to 1
+    in y, 1         ; Shift one bit into ISR
+    in NULL, 11     ; And eleven zeroes afterwards leaving the register on 1048576
+    
+    mov y, isr      ; load that value back into y, setting the sampling time
+    mov x, ~NULL    ; set x register to u32 max
+
+sample:
+    set pindirs, 0  ; changing to input (pull up will raise the level to high)
+
+busy:
+    jmp pin, high   ; will jump to the next line until pin gets high 
+    jmp y--, busy   ; in case we are still sampling going back to busy to see if pins in question went high, otherwise goto done
+    jmp done
+
+high:
+    set pindirs, 1  ; pin output
+    set pins, 0     ; setting pins low and count down with y outside of busy loop 
+
+    jmp y--, dec1
+    jmp done
+dec1:
+    jmp y--, dec2
+    jmp done  
+dec2:
+    jmp y--, dec3
+    jmp done
+dec3:
+    jmp y--, dec4
+    jmp done
+dec4:
+    jmp y--, dec5
+    jmp done
+dec5:
+    jmp x--, sample   ; x gets decremented and associated with undimensional cap value
+
+;We will reach done by having y as 0 
+done:
+    mov isr, x        ; X put into ISR and push to FIFO
+    push block
+
+
+% c-sdk {
+static inline void hello_program_init(PIO pio, uint sm, uint offset, uint pin) 
+{
+    pio_sm_config c = hello_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin` parameter to this function.
+    sm_config_set_set_pins(&c, pin, 1);
+    sm_config_set_jmp_pin(&c, pin);
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin);
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}
